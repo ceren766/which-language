@@ -7,24 +7,24 @@ require 'uri'
 require 'time'
 require 'fileutils'
 
-# GeminiCodex: Optimized adapter for Google Gemini API.
-# Handles content generation using the Google AI SDK/Vertex-style REST endpoints.
-class GeminiCodex < BaseCodex
+# GroqCodex: Adapter for high-performance inference via Groq API.
+# Utilizes OpenAI-compatible chat completion endpoints.
+class GroqCodex < BaseCodex
   MILLION = 1_000_000.0
 
   def initialize(config = {})
-    super('gemini', config)
+    super('groq', config)
     
     # API Credentials & Config
-    @api_key      = presence(config[:api_key]) || ENV['GOOGLE_API_KEY']
+    @api_key      = presence(config[:api_key]) || ENV['GROQ_API_KEY']
     @api_url      = presence(config[:api_url]) || presence(config[:api_endpoint])
     @model_name   = presence(config[:model]) || presence(config[:model_name])
     
     # Runtime Settings
-    @cooldown_seconds = float_or_default(config[:cooldown_seconds], 1.2)
-    @timeout_seconds  = integer_or_default(config[:timeout_seconds], 600)
+    @cooldown_seconds = float_or_default(config[:cooldown_seconds], 1.5)
+    @timeout_seconds  = integer_or_default(config[:timeout_seconds], 60)
     
-    # Pricing Metrics (USD per 1M tokens)
+    # Pricing (USD per 1M tokens)
     @price_input_1m  = float_or_default(config[:price_input_1m], 0.0)
     @price_output_1m = float_or_default(config[:price_output_1m], 0.0)
 
@@ -33,16 +33,16 @@ class GeminiCodex < BaseCodex
 
   def version; @model_name; end
 
-  # Connectivity check with a minimal prompt
+  # Lightweight request to verify connectivity and model readiness
   def warmup(warmup_dir)
-    puts "  Warmup: Validating Gemini connectivity (#{@model_name})..."
+    puts "  Warmup: Running trivial prompt on Groq (#{@model_name})..."
     run_generation('Respond with just OK.', dir: warmup_dir)
   end
 
   def run_generation(prompt, dir:, log_path: nil)
     start_time = Time.now
     begin
-      raw, response_text, usage = call_gemini_api(prompt)
+      raw, response_text, usage = call_groq_api(prompt)
       elapsed = Time.now - start_time
       metrics = build_metrics(usage, elapsed)
 
@@ -58,39 +58,60 @@ class GeminiCodex < BaseCodex
 
   private
 
-  # Executes the core HTTP POST request using the dynamic URL and API key
-  def call_gemini_api(prompt)
-    # Gemini API expects the key as a query parameter rather than a header
-    uri = URI("#{@api_url}/#{@model_name}:generateContent?key=#{@api_key}")
+  # Executes the HTTP POST request to the Groq backend
+  def call_groq_api(prompt)
+    uri = URI.parse(@api_url)
     
-    req = Net::HTTP::Post.new(uri).tap do |r|
-      r['Content-Type'] = 'application/json'
-      r.body = JSON.generate({ contents: [{ parts: [{ text: prompt }] }] })
+    # Path Fallback: Ensure a valid chat completions path is used
+    path = uri.path.empty? ? '/openai/v1/chat/completions' : uri.path
+
+    req = Net::HTTP::Post.new(path).tap do |r|
+      r['Content-Type']  = 'application/json'
+      r['Authorization'] = "Bearer #{@api_key}"
+      r.body = JSON.generate(request_payload(prompt))
     end
 
-    # Establish SSL connection and perform the request
-    Net::HTTP.start(uri.host, uri.port, use_ssl: true, read_timeout: @timeout_seconds) do |http| 
+    # Perform secure HTTP request
+    Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https', read_timeout: @timeout_seconds) do |http| 
       http.request(req) 
     end.then { |res| parse_response(res) }
   end
 
-  # Parses the JSON response and extracts error messages if the request failed
+  def request_payload(prompt)
+    {
+      model: @model_name,
+      messages: [
+        { role: 'system', content: system_instruction },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.1,
+      max_tokens: 4096
+    }
+  end
+
+  def system_instruction
+    <<~TEXT
+      You are a senior software engineer. Respond ONLY with the source code. 
+      Do not include conversational text or notes. 
+      Always wrap code in triple backticks with the language identifier.
+    TEXT
+  end
+
   def parse_response(response)
     unless response.is_a?(Net::HTTPSuccess)
-      # Extract nested error message if available in Google's JSON format
+      # Extract error message from JSON body if possible
       err = JSON.parse(response.body)['error']['message'] rescue response.body
-      raise CodexError, "Gemini API failure (#{response.code}): #{err}"
+      raise CodexError, "Groq API failure (#{response.code}): #{err}"
     end
     
     data = JSON.parse(response.body)
-    usage = data['usageMetadata'] || {}
-    [data, data.dig('candidates', 0, 'content', 'parts', 0, 'text') || '', usage]
+    usage = data['usage'] || {}
+    [data, data.dig('choices', 0, 'message', 'content') || '', usage]
   end
 
-  # Normalizes usage metadata into project-standard metrics
   def build_metrics(usage, elapsed)
-    input  = usage['promptTokenCount'] || 0
-    output = usage['candidatesTokenCount'] || 0
+    input  = usage['prompt_tokens'] || 0
+    output = usage['completion_tokens'] || 0
     
     {
       input_tokens: input,
@@ -101,7 +122,6 @@ class GeminiCodex < BaseCodex
     }
   end
 
-  # Calculates cost based on millions of tokens
   def calculate_cost(input, output)
     ((input / MILLION) * @price_input_1m + (output / MILLION) * @price_output_1m).round(8)
   end
@@ -119,14 +139,14 @@ class GeminiCodex < BaseCodex
 
   def handle_error(e, start_time)
     puts "\n" + ("!" * 50)
-    puts "❌ GEMINI ADAPTER ERROR: #{@model_name} -> #{e.message}"
+    puts "❌ GROQ ADAPTER ERROR: #{@model_name} -> #{e.message}"
     puts ("!" * 50) + "\n"
     { success: false, elapsed_seconds: (Time.now - start_time).round(1), error: e.message }
   end
 
   def validate_config!
-    raise CodexError, 'GOOGLE_API_KEY not configured' unless @api_key
-    raise CodexError, 'Gemini API URL not configured' unless @api_url
-    raise CodexError, 'Model name not configured for Gemini' unless @model_name
+    raise CodexError, 'GROQ_API_KEY not configured' unless @api_key
+    raise CodexError, 'Groq API URL/Endpoint not configured' unless @api_url
+    raise CodexError, 'Model name not configured for Groq' unless @model_name
   end
 end

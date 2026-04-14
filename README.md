@@ -127,24 +127,13 @@ bin/which-language run gemini minigit --lang python --trials 3
 
 ---
 
-## 🏆 Hall of Fame
+## 🏆 Contributors
 
-This project thrives on the brilliant minds driving it forward. We celebrate every contribution! Here are the legends who have shaped the initiative:
+This project thrives on the brilliant minds driving it forward. We celebrate every contribution!
+See the [CHANGELOG.md](./CHANGELOG.md) for a full list of legends who have shaped the initiative.
 
-<div align="center">
-
-| [<img src="https://github.com/mame.png?size=100" width="100px;"/><br /><sub><b>mame</b></sub>](https://github.com/mame) | [<img src="https://github.com/berkevnl.png?size=100" width="100px;"/><br /><sub><b>berkevnl</b></sub>](https://github.com/berkevnl) | [<img src="https://github.com/Ahmetngz.png?size=100" width="100px;"/><br /><sub><b>Ahmetngz</b></sub>](https://github.com/Ahmetngz) |
-| :---: | :---: | :---: |
-| 🚀 Visionary | 💻 Core Architect | 💻 Core Architect |
-
-| [<img src="https://github.com/knewral.png?size=100" width="100px;"/><br /><sub><b>knewral</b></sub>](https://github.com/knewral) | [<img src="https://github.com/Elvannegis.png?size=100" width="100px;"/><br /><sub><b>Elvannegis</b></sub>](https://github.com/Elvannegis) | |
-| :---: | :---: | :---: |
-| 🎯 Problem Architect | 🎯 Problem Architect | |
-
-</div>
-
-### Become a Legend
-Want your face on the Hall of Fame? See our strict but fair [Contributor Protocol (AGENT.md)](./AGENT.md). We are actively hunting for:
+### Become a Contributor
+Want to join the movement? See our strict but fair [Contributor Protocol (AGENT.md)](./AGENT.md). We are actively hunting for:
 - **Codex Whisperers:** Implement new adapters in `lib/codexes`
 - **Data Scientists:** Run benchmarks on your machines and submit results
 - **Problem Architects:** Design new, brutal testing scenarios in `problems/`
